@@ -3,29 +3,35 @@ const bot = new Discord.Client()
 
 const jsonfile = require('jsonfile');
 var playlist = require("./playlist.json")
+var history = require("./history.json")
+const token = require("./auth.json").token
+const gtoken = require("./auth.json").google
+const request = require('request');
 
-const token = "NzE1MzIwMzE4ODg5MDMzODIw.Xs7lFw.3yfOd5P_e-5FdzqGoIuUT4biA1g"
+
+// https://www.googleapis.com/youtube/v3/videos?part=contentDetails&key=YOUR-API-KEY&id=YOUR-VID
 
 function messageHandler(key, value, map){
-    console.log(key.content)
     if(key){
+        console.log(key.content)
         let x = key.content.substring(0,1)
-        if(key.content.substring(0,3) == "bot" || key.content.substring(0,3) == "bro" || key.author.bot || x == '!' || x == '*' || x == '>') key.delete()
+        let keyword = key.content.substring(0,3).toLowerCase()
+        if(keyword == "bot" || keyword == "bro" || key.author.bot || x == '!' || x == '*' || x == '>') key.delete()
     }
 }
 
 function getPlaylist(m, args){
     let jsonTable = playlist.table.find(el => el.name == args[1].toLowerCase())
-    if(!jsonTable) {m.reply("le nom que tu m'as donné ne marche pas mon bro ..."); return}
+    if(!jsonTable) {
+        m.reply("le nom que tu m'as donné ne marche pas mon bro ...")
+        return
+    }
     let textToSend = ""
     let i = 0
     jsonTable.musics.forEach(music => {
-        if(music != null){
-            textToSend += "<" + i + "> " + music + "\n"
-        }
+        if(music != null) textToSend += "<" + i + "> " + music + "\n"
         i += 1
     })
-
     m.channel.send("Tiens mon bro !")
     m.channel.send("```\n" + textToSend + "```")
 }
@@ -69,6 +75,63 @@ function removePlayList(m, args){
     jsonfile.writeFile('playlist.json', playlist, {spaces:2}/*, function(err){if(err != null)console.log(err);}*/);
 }
 
+function downloadPage(url) {
+    return new Promise((resolve, reject) => {
+        request(url, (error, response, body) => {
+            if (error) reject(error);
+            if (response.statusCode != 200) {
+                reject('Invalid status code <' + response.statusCode + '>');
+            }
+            resolve(body);
+        });
+    });
+}
+
+async function getVideoName(c) {
+    vidId = c.replace("https://www.youtube.com/watch?v=","").substring(0,11)
+    const url = "https://www.googleapis.com/youtube/v3/videos?part=snippet&key=" + gtoken + "&id=" + vidId
+    const htmlRes = await downloadPage(url)
+    const title = JSON.parse(htmlRes).items[0].snippet.title
+    return title
+}
+
+async function addToHistory(m){
+    let content = m.content.replace("!play ","").replace("!p ","")
+    if(content.includes("https://www.youtube")) content = await getVideoName(content)
+    const customAuthor = {username:m.author.username, avatar:m.author.avatarURL()}
+    const item = {author:customAuthor, content:content}
+    history.tab.push(item)
+    jsonfile.writeFile('history.json', history, {spaces:2});
+    console.log("Wrote : " + item)
+}
+
+function flushHistory(){
+    history = {tab:[]}
+    console.log("<> Flushing history !")
+    jsonfile.writeFile('history.json', history, {spaces:2});
+}
+
+function strHistory(m, numberToDisplay){
+    numberToDisplay = numberToDisplay || 10
+    console.log(numberToDisplay)
+    const embed = new Discord.MessageEmbed()
+        .setColor("#55ff55")
+        .setTitle('Historique de Rythm')
+	    .setURL('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+	    .setAuthor(m.author.username, m.author.avatarURL(), m.author.avatarURL())
+	    .setThumbnail("https://cdn.discordapp.com/app-icons/715320318889033820/9aa53543f4424dbe283c8a6a304bbb7e.png?size=256&quot")
+
+    const generateFields = function(embed){
+        let start = history.tab.length - numberToDisplay
+        if(start < 0) start = 0
+        for(let x = start; x < history.tab.length; x++){
+            embed.addField(history.tab[x].author.username, history.tab[x].content)
+        }
+    }
+    generateFields(embed)
+    return embed
+}
+
 bot.on('ready', () => {
     console.log('Bot is ready')
 })
@@ -76,10 +139,12 @@ bot.on('ready', () => {
 bot.on('message', (m) => {
     if (m.author == bot.user) return
     
-    if(m.content.substring(0,3) === "bro" || m.content.substring(0,3) === "bot"){
+    let rythmPrefix = m.content.substring(0,1)
+    let broPrefix = m.content.substring(0,3)
+
+    if(broPrefix == "bro" || broPrefix == "bot"){
         let args = m.content.substring(4).split(" ")
         console.log(args)
-
         switch(args[0].toLowerCase()){
             case 'clear': case 'c':
                 m.channel.send("En train de nettoyer mon bro !").then(m => m.delete())
@@ -111,16 +176,64 @@ bot.on('message', (m) => {
                 }
                 break;
             
-
-            case 'help': case 'h':
+            case 'help':
                 m.reply("Voici comment je marche mon bro !")
-                m.channel.send("```Mes allias sont bro et bot\n\n bro clear|c > Clear les messages des bots vieux de moins de deux semaines \n bro playlist|pl|p > Aficher ou gerer une playlist \n bro coucou|plop|bonjour > Pour me dire bonjour !```")
+                m.channel.send("```Mes allias sont bro et bot\n\n \
+                bro h|historique > Envoie l'historique des sons qui ont été envoyés à Rythm \n \
+                bro clear|c > Clear les messages des bots vieux de moins de deux semaines \n \
+                bro playlist|pl|p > Aficher ou gerer une playlist \n \
+                bro coucou|plop|bonjour > Pour me dire bonjour !```")
+                break;
+
+            case 'flush':
+                if(m.author.id == "229700193409302528") flushHistory()
+                else console.log("Unauthorized User")
+                break;
+            
+            case 'h' : case "history":
+                let mess = m.channel.send(strHistory(m, args[1]))
+                mess.then((msg) => {
+                    setTimeout(() => { 
+                        try{
+                            m.delete()
+                            msg.delete()
+                        }
+                        catch{}
+                    }, 30000);
+                })
                 break;
 
             default:
                 m.reply("j'ai pas compris bro ...")
                 break;
         }
+    }
+    else if(rythmPrefix == '!' || rythmPrefix == '*' || rythmPrefix == '>'){
+        let splitted = m.content.substring(1).split(" ")
+        let functionCalled = splitted[0]
+        switch(functionCalled){
+            case 'p' : case 'play':
+                if(splitted.length < 2) return;
+                addToHistory(m)
+                setTimeout(() => { 
+                    try{m.delete()}
+                    catch{}
+                }, 30000);
+                break;
+            
+            case "*Playing**":
+                break;
+
+            default:
+                console.log("User called Rythm for : " + functionCalled)
+                break;
+        }
+    }
+    else if(m.author.id == "235088799074484224" || m.author.id == "415062217596076033" || m.author.id == "252128902418268161"){
+        setTimeout(() => {
+            try{m.delete()}
+            catch{}
+        }, 30000);
     }
 })
 

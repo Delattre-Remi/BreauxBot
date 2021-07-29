@@ -5,8 +5,10 @@
     "main": "bot.js",
     "author": "Mostunique",
     "dependencies": {
+        "ajax": "0.0.4",
         "discord.js": "^12.2.0",
         "fs": "0.0.1-security",
-        "jsonfile": "^6.0.1"
+        "jsonfile": "^6.0.1",
+        "request": "^2.88.2"
     }
 }
