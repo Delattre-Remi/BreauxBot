@@ -113,7 +113,6 @@ function flushHistory(){
 
 function strHistory(m, numberToDisplay){
     numberToDisplay = numberToDisplay || 10
-    console.log(numberToDisplay)
     const embed = new Discord.MessageEmbed()
         .setColor("#55ff55")
         .setTitle('Historique de Rythm')
@@ -188,6 +187,7 @@ bot.on('message', (m) => {
             case 'flush':
                 if(m.author.id == "229700193409302528") flushHistory()
                 else console.log("Unauthorized User")
+                m.delete()
                 break;
             
             case 'h' : case "history":
