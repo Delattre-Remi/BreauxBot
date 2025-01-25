@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ELO Score Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        select, textarea, button, input {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid #ccc;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>ELO Score Calculator</h1>
+
+    <form id="add-player-form">
+        <div class="form-group">
+            <label for="new-player-name">Add New Player:</label>
+            <input type="text" id="new-player-name" placeholder="Enter player name">
+        </div>
+        <button type="button" onclick="addPlayer()">Add Player</button>
+    </form>
+
+    <form id="match-form">
+        <div class="form-group">
+            <label for="player1">Player 1:</label>
+            <select id="player1"></select>
+        </div>
+        <div class="form-group">
+            <label for="player2">Player 2:</label>
+            <select id="player2"></select>
+        </div>
+        <div class="form-group">
+            <label for="score1">Player 1 Score:</label>
+            <textarea id="score1" rows="1"></textarea>
+        </div>
+        <div class="form-group">
+            <label for="score2">Player 2 Score:</label>
+            <textarea id="score2" rows="1"></textarea>
+        </div>
+        <button type="button" onclick="submitMatch()">Submit Match</button>
+    </form>
+
+    <h2>Scoreboard</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>ELO</th>
+            </tr>
+        </thead>
+        <tbody id="scoreboard-body"></tbody>
+    </table>
+
+    <h2>Match History</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Player 1</th>
+                <th>Player 2</th>
+                <th>Score</th>
+            </tr>
+        </thead>
+        <tbody id="match-history-body"></tbody>
+    </table>
+
+    <div class="form-group">
+        <button type="button" onclick="exportData()">Export JSON</button>
+        <button type="button" onclick="document.getElementById('import-file').click()">Import JSON</button>
+        <input type="file" id="import-file" style="display: none;" accept="application/json" onchange="importData(event)">
+    </div>
+
+    <script>
+        const players = JSON.parse(localStorage.getItem("players")) || {};
+        const matchHistory = JSON.parse(localStorage.getItem("matchHistory")) || [];
+        const playerSelects = document.querySelectorAll("#player1, #player2");
+        const scoreboardBody = document.getElementById("scoreboard-body");
+        const matchHistoryBody = document.getElementById("match-history-body");
+        const K = 20;
+
+        function saveData() {
+            localStorage.setItem("players", JSON.stringify(players));
+            localStorage.setItem("matchHistory", JSON.stringify(matchHistory));
+        }
+
+        function addPlayer() {
+            const playerName = document.getElementById("new-player-name").value.trim();
+            if (!playerName || players[playerName]) return;
+
+            players[playerName] = { elo: 1000 };
+
+            playerSelects.forEach(select => {
+                const option = document.createElement("option");
+                option.value = playerName;
+                option.textContent = playerName;
+                select.appendChild(option);
+            });
+
+            updateScoreboard();
+            saveData();
+            document.getElementById("new-player-name").value = "";
+        }
+
+        function submitMatch() {
+            const player1 = document.getElementById("player1").value;
+            const player2 = document.getElementById("player2").value;
+            const score1 = parseInt(document.getElementById("score1").value, 10);
+            const score2 = parseInt(document.getElementById("score2").value, 10);
+
+            if (!player1 || !player2 || isNaN(score1) || isNaN(score2) || player1 === player2) return;
+
+            const result1 = score1 > score2 ? 1 : score1 === score2 ? 0.5 : 0;
+            const result2 = 1 - result1;
+
+            const expected1 = 1 / (1 + Math.pow(10, (players[player2].elo - players[player1].elo) / 400));
+            const expected2 = 1 / (1 + Math.pow(10, (players[player1].elo - players[player2].elo) / 400));
+
+            players[player1].elo += K * (result1 - expected1);
+            players[player2].elo += K * (result2 - expected2);
+
+            matchHistory.push({ player1, player2, score1, score2 });
+
+            const row = document.createElement("tr");
+            row.innerHTML = `<td>${player1}</td><td>${player2}</td><td>${score1} - ${score2}</td>`;
+            matchHistoryBody.appendChild(row);
+
+            updateScoreboard();
+            saveData();
+            document.getElementById("match-form").reset();
+        }
+
+        function updateScoreboard() {
+            scoreboardBody.innerHTML = "";
+            Object.entries(players).forEach(([player, { elo }]) => {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td>${player}</td><td>${Math.round(elo)}</td>`;
+                scoreboardBody.appendChild(row);
+            });
+        }
+
+        function loadMatchHistory() {
+            matchHistoryBody.innerHTML = "";
+            matchHistory.forEach(({ player1, player2, score1, score2 }) => {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td>${player1}</td><td>${player2}</td><td>${score1} - ${score2}</td>`;
+                matchHistoryBody.appendChild(row);
+            });
+        }
+
+        function exportData() {
+            const data = { players, matchHistory };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "elo_data.json";
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = JSON.parse(e.target.result);
+                Object.assign(players, data.players);
+                matchHistory.splice(0, matchHistory.length, ...data.matchHistory);
+
+                saveData();
+                updateScoreboard();
+                loadMatchHistory();
+            };
+            reader.readAsText(file);
+        }
+
+        function initialize() {
+            Object.keys(players).forEach(player => {
+                playerSelects.forEach(select => {
+                    const option = document.createElement("option");
+                    option.value = player;
+                    option.textContent = player;
+                    select.appendChild(option);
+                });
+            });
+
+            updateScoreboard();
+            loadMatchHistory();
+        }
+
+        initialize();
+    </script>
+</body>
+</html>
